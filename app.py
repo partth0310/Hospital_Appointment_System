@@ -1,7 +1,6 @@
 import streamlit as st
 import json
 import os
-from datetime import datetime
 
 # ---------------- PAGE CONFIG ----------------
 
@@ -24,6 +23,14 @@ footer {
 }
 
 [data-testid="stToolbar"] {
+    visibility: hidden;
+}
+
+[data-testid="stStatusWidget"] {
+    visibility: hidden;
+}
+
+[data-testid="stDecoration"] {
     visibility: hidden;
 }
 </style>
@@ -79,10 +86,6 @@ if "username" not in st.session_state:
 if "role" not in st.session_state:
     st.session_state.role = ""
 
-if "page" not in st.session_state:
-    st.session_state.page = "Home"
-
-
 # ---------------- DOCTORS ----------------
 
 doctors = [
@@ -108,9 +111,8 @@ doctors = [
     }
 ]
 
-
 # =========================================================
-# NOT LOGGED IN
+# LOGIN / REGISTER
 # =========================================================
 
 if not st.session_state.logged_in:
@@ -192,7 +194,6 @@ if not st.session_state.logged_in:
 
         if st.button("Login"):
 
-            # ADMIN LOGIN
             if login_type == "Admin":
 
                 if username == "admin" and password == "admin123":
@@ -200,7 +201,6 @@ if not st.session_state.logged_in:
                     st.session_state.logged_in = True
                     st.session_state.username = username
                     st.session_state.role = "Admin"
-                    st.session_state.page = "Dashboard"
 
                     st.success("Admin login successful!")
                     st.rerun()
@@ -208,7 +208,6 @@ if not st.session_state.logged_in:
                 else:
                     st.error("Invalid admin username or password.")
 
-            # USER LOGIN
             else:
 
                 users = load_users()
@@ -228,14 +227,12 @@ if not st.session_state.logged_in:
                     st.session_state.logged_in = True
                     st.session_state.username = username
                     st.session_state.role = "User"
-                    st.session_state.page = "Home"
 
                     st.success("Login successful!")
                     st.rerun()
 
                 else:
                     st.error("Invalid username or password.")
-
 
 # =========================================================
 # LOGGED IN
@@ -257,7 +254,7 @@ else:
 
     st.sidebar.divider()
 
-    # ---------------- USER MENU ----------------
+    # ---------------- MENU ----------------
 
     if st.session_state.role == "User":
 
@@ -272,8 +269,6 @@ else:
             ]
         )
 
-    # ---------------- ADMIN MENU ----------------
-
     else:
 
         page = st.sidebar.radio(
@@ -286,8 +281,6 @@ else:
             ]
         )
 
-    st.session_state.page = page
-
     # ---------------- LOGOUT ----------------
 
     if st.sidebar.button("Logout"):
@@ -295,7 +288,6 @@ else:
         st.session_state.logged_in = False
         st.session_state.username = ""
         st.session_state.role = ""
-        st.session_state.page = "Home"
 
         st.rerun()
 
@@ -392,8 +384,8 @@ else:
         my_appointments = [
             appointment
             for appointment in appointments
-            if appointment.get("username") ==
-            st.session_state.username
+            if appointment.get("username")
+            == st.session_state.username
         ]
 
         if my_appointments:
@@ -406,23 +398,28 @@ else:
                 st.write(f"### Appointment {index}")
 
                 st.write(
-                    f"**Patient:** {appointment.get('patient', '')}"
+                    f"**Patient:** "
+                    f"{appointment.get('patient', '')}"
                 )
 
                 st.write(
-                    f"**Doctor:** {appointment.get('doctor', '')}"
+                    f"**Doctor:** "
+                    f"{appointment.get('doctor', '')}"
                 )
 
                 st.write(
-                    f"**Date:** {appointment.get('date', '')}"
+                    f"**Date:** "
+                    f"{appointment.get('date', '')}"
                 )
 
                 st.write(
-                    f"**Reason:** {appointment.get('reason', '')}"
+                    f"**Reason:** "
+                    f"{appointment.get('reason', '')}"
                 )
 
                 st.write(
-                    f"**Status:** {appointment.get('status', 'Booked')}"
+                    f"**Status:** "
+                    f"{appointment.get('status', 'Booked')}"
                 )
 
                 st.divider()
@@ -443,8 +440,8 @@ else:
         my_appointments = [
             appointment
             for appointment in appointments
-            if appointment.get("username") ==
-            st.session_state.username
+            if appointment.get("username")
+            == st.session_state.username
             and appointment.get("status") != "Cancelled"
         ]
 
@@ -455,6 +452,7 @@ else:
             for i, appointment in enumerate(
                 my_appointments
             ):
+
                 options.append(
                     f"{i + 1}. "
                     f"{appointment.get('doctor')} - "
@@ -670,7 +668,6 @@ else:
 
         else:
             st.info("No active appointments found.")
-
 
 # ---------------- FOOTER ----------------
 
