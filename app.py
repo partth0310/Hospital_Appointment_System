@@ -33,6 +33,14 @@ footer {
 [data-testid="stDecoration"] {
     visibility: hidden;
 }
+
+.stDeployButton {
+    display: none;
+}
+
+.viewerBadge_container__1QSob {
+    display: none;
+}
 </style>
 """, unsafe_allow_html=True)
 
