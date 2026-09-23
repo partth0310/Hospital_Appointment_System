@@ -1,56 +1,19 @@
 import streamlit as st
 import sqlite3
 
-# =========================================================
-# PAGE CONFIG
-# =========================================================
+# =========================
+# PAGE SETTINGS
+# =========================
 
 st.set_page_config(
     page_title="Hospital Appointment Management System",
     page_icon="🏥",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
-# =========================================================
-# HIDE STREAMLIT UI
-# =========================================================
-
-st.markdown("""
-<style>
-#MainMenu {
-    visibility: hidden;
-}
-
-footer {
-    visibility: hidden;
-}
-
-[data-testid="stToolbar"] {
-    visibility: hidden;
-}
-
-[data-testid="stStatusWidget"] {
-    visibility: hidden;
-}
-
-[data-testid="stDecoration"] {
-    visibility: hidden;
-}
-
-.stDeployButton {
-    display: none;
-}
-
-.viewerBadge_container__1QSob {
-    display: none;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# =========================================================
+# =========================
 # DATABASE
-# =========================================================
+# =========================
 
 DATABASE_NAME = "hospital.db"
 
@@ -85,42 +48,63 @@ def create_tables():
         )
     """)
 
+    # Default admin account
+    cursor.execute("""
+        SELECT * FROM users WHERE username = ?
+    """, ("admin",))
+
+    admin = cursor.fetchone()
+
+    if not admin:
+        cursor.execute("""
+            INSERT INTO users
+            (name, username, password, role)
+            VALUES (?, ?, ?, ?)
+        """, (
+            "Administrator",
+            "admin",
+            "admin123",
+            "Admin"
+        ))
+
     conn.commit()
     conn.close()
 
 
 create_tables()
 
-# =========================================================
+# =========================
 # DOCTORS
-# =========================================================
+# =========================
 
 doctors = [
     {
         "name": "Dr. Amit Sharma",
         "specialization": "Cardiologist",
-        "timing": "10:00 AM - 2:00 PM"
+        "time": "10:00 AM - 2:00 PM"
     },
     {
         "name": "Dr. Priya Patil",
         "specialization": "Gynecologist",
-        "timing": "11:00 AM - 3:00 PM"
+        "time": "11:00 AM - 3:00 PM"
     },
     {
         "name": "Dr. Rahul Deshmukh",
         "specialization": "General Physician",
-        "timing": "9:00 AM - 1:00 PM"
+        "time": "9:00 AM - 1:00 PM"
     },
     {
         "name": "Dr. Sneha Joshi",
         "specialization": "Dermatologist",
-        "timing": "2:00 PM - 6:00 PM"
+        "time": "2:00 PM - 6:00 PM"
     }
 ]
 
-# =========================================================
+doctor_names = [doctor["name"] for doctor in doctors]
+
+# =========================
 # DATABASE FUNCTIONS
-# =========================================================
+# =========================
 
 def register_user(name, username, password):
     conn = get_connection()
@@ -128,31 +112,34 @@ def register_user(name, username, password):
 
     try:
         cursor.execute("""
-            INSERT INTO users (name, username, password, role)
+            INSERT INTO users
+            (name, username, password, role)
             VALUES (?, ?, ?, ?)
         """, (name, username, password, "User"))
 
         conn.commit()
-        return True
+        return True, "Registration successful!"
 
     except sqlite3.IntegrityError:
-        return False
+        return False, "Username already exists."
 
     finally:
         conn.close()
 
 
-def get_user(username, password):
+def get_user(username, password, role):
     conn = get_connection()
     cursor = conn.cursor()
 
     cursor.execute("""
-        SELECT name, username, role
-        FROM users
-        WHERE username = ? AND password = ?
-    """, (username, password))
+        SELECT * FROM users
+        WHERE username = ?
+        AND password = ?
+        AND role = ?
+    """, (username, password, role))
 
     user = cursor.fetchone()
+
     conn.close()
 
     return user
@@ -190,6 +177,7 @@ def get_all_appointments():
     """)
 
     appointments = cursor.fetchall()
+
     conn.close()
 
     return appointments
@@ -200,13 +188,14 @@ def get_user_appointments(username):
     cursor = conn.cursor()
 
     cursor.execute("""
-        SELECT id, username, patient, doctor, date, reason, status
+        SELECT id, patient, doctor, date, reason, status
         FROM appointments
         WHERE username = ?
         ORDER BY id DESC
     """, (username,))
 
     appointments = cursor.fetchall()
+
     conn.close()
 
     return appointments
@@ -218,17 +207,17 @@ def cancel_appointment(appointment_id):
 
     cursor.execute("""
         UPDATE appointments
-        SET status = 'Cancelled'
+        SET status = ?
         WHERE id = ?
-    """, (appointment_id,))
+    """, ("Cancelled", appointment_id))
 
     conn.commit()
     conn.close()
 
 
-# =========================================================
+# =========================
 # SESSION STATE
-# =========================================================
+# =========================
 
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
@@ -236,250 +225,348 @@ if "logged_in" not in st.session_state:
 if "username" not in st.session_state:
     st.session_state.username = ""
 
-if "role" not in st.session_state:
-    st.session_state.role = ""
-
 if "name" not in st.session_state:
     st.session_state.name = ""
 
-# =========================================================
+if "role" not in st.session_state:
+    st.session_state.role = ""
+
+if "page" not in st.session_state:
+    st.session_state.page = "Home"
+
+
+# =========================
 # LOGIN / REGISTER
-# =========================================================
+# =========================
 
 if not st.session_state.logged_in:
 
     st.title("🏥 Hospital Appointment Management System")
 
-    st.write(
-        "Book and manage hospital appointments easily."
-    )
+    st.write("### Welcome to Hospital Appointment Management System")
 
-    menu = st.radio(
-        "Select Option",
-        ["Login", "Register"],
-        horizontal=True
-    )
+    st.divider()
 
-    # -----------------------------------------------------
-    # REGISTER
-    # -----------------------------------------------------
+    login_tab, register_tab = st.tabs([
+        "🔐 Login",
+        "📝 Register"
+    ])
 
-    if menu == "Register":
+    # =========================
+    # LOGIN
+    # =========================
 
-        st.header("📝 User Registration")
+    with login_tab:
 
-        name = st.text_input("Full Name")
-        username = st.text_input("Username")
+        st.subheader("Login")
+
+        role = st.selectbox(
+            "Select Role",
+            ["User", "Admin"]
+        )
+
+        username = st.text_input(
+            "Username",
+            key="login_username"
+        )
+
         password = st.text_input(
             "Password",
-            type="password"
+            type="password",
+            key="login_password"
         )
+
+        if st.button(
+            "Login",
+            type="primary",
+            use_container_width=True
+        ):
+
+            user = get_user(
+                username,
+                password,
+                role
+            )
+
+            if user:
+
+                st.session_state.logged_in = True
+                st.session_state.username = user[2]
+                st.session_state.name = user[1]
+                st.session_state.role = user[4]
+                st.session_state.page = "Home"
+
+                st.success("Login successful!")
+
+                st.rerun()
+
+            else:
+
+                st.error(
+                    "Invalid username, password or role."
+                )
+
+    # =========================
+    # REGISTER
+    # =========================
+
+    with register_tab:
+
+        st.subheader("Create New Account")
+
+        name = st.text_input(
+            "Full Name",
+            key="register_name"
+        )
+
+        username = st.text_input(
+            "Username",
+            key="register_username"
+        )
+
+        password = st.text_input(
+            "Password",
+            type="password",
+            key="register_password"
+        )
+
         confirm_password = st.text_input(
             "Confirm Password",
-            type="password"
+            type="password",
+            key="register_confirm"
         )
 
-        if st.button("Register"):
+        if st.button(
+            "Register",
+            type="primary",
+            use_container_width=True
+        ):
 
             if not name or not username or not password:
-                st.error("Please fill all fields.")
+
+                st.warning(
+                    "Please fill all required fields."
+                )
 
             elif password != confirm_password:
-                st.error("Passwords do not match.")
 
-            elif register_user(
-                name,
-                username,
-                password
-            ):
-                st.success(
-                    "Registration successful! Please login."
+                st.error(
+                    "Passwords do not match."
                 )
 
             else:
-                st.error("Username already exists.")
 
-    # -----------------------------------------------------
-    # LOGIN
-    # -----------------------------------------------------
-
-    else:
-
-        st.header("🔐 Login")
-
-        login_type = st.radio(
-            "Login As",
-            ["User", "Admin"],
-            horizontal=True
-        )
-
-        username = st.text_input("Username")
-
-        password = st.text_input(
-            "Password",
-            type="password"
-        )
-
-        if st.button("Login"):
-
-            # ADMIN LOGIN
-            if login_type == "Admin":
-
-                if (
-                    username == "admin"
-                    and password == "admin123"
-                ):
-
-                    st.session_state.logged_in = True
-                    st.session_state.username = username
-                    st.session_state.name = "Administrator"
-                    st.session_state.role = "Admin"
-
-                    st.success(
-                        "Admin login successful!"
-                    )
-
-                    st.rerun()
-
-                else:
-                    st.error(
-                        "Invalid admin username or password."
-                    )
-
-            # USER LOGIN
-            else:
-
-                user = get_user(
+                success, message = register_user(
+                    name,
                     username,
                     password
                 )
 
-                if user:
-
-                    st.session_state.logged_in = True
-                    st.session_state.name = user[0]
-                    st.session_state.username = user[1]
-                    st.session_state.role = user[2]
-
-                    st.success(
-                        "Login successful!"
+                if success:
+                    st.success(message)
+                    st.info(
+                        "Now go to Login and login with your account."
                     )
-
-                    st.rerun()
-
                 else:
-                    st.error(
-                        "Invalid username or password."
-                    )
+                    st.error(message)
 
-# =========================================================
-# LOGGED IN
-# =========================================================
+
+# =========================
+# LOGGED-IN USER
+# =========================
 
 else:
 
-    # =====================================================
-    # SIDEBAR
-    # =====================================================
+    # =========================
+    # HEADER
+    # =========================
 
-    st.sidebar.title("🏥 Hospital System")
+    st.title("🏥 Hospital Appointment Management System")
 
-    st.sidebar.write(
-        f"Welcome, **{st.session_state.name}**"
+    st.write(
+        f"Welcome, **{st.session_state.name}** 👋"
     )
 
-    st.sidebar.write(
+    st.write(
         f"Role: **{st.session_state.role}**"
     )
 
-    st.sidebar.divider()
+    st.divider()
 
-    # USER MENU
+    # =========================
+    # FRONT PAGE NAVIGATION
+    # =========================
+
     if st.session_state.role == "User":
 
-        page = st.sidebar.radio(
-            "Menu",
-            [
-                "Home",
-                "Book Appointment",
-                "My Appointments",
-                "Cancel My Appointment",
-                "Doctors"
-            ]
-        )
+        col1, col2, col3, col4, col5, col6 = st.columns(6)
 
-    # ADMIN MENU
+        with col1:
+            if st.button(
+                "🏠 Home",
+                use_container_width=True
+            ):
+                st.session_state.page = "Home"
+                st.rerun()
+
+        with col2:
+            if st.button(
+                "📅 Book",
+                use_container_width=True
+            ):
+                st.session_state.page = "Book Appointment"
+                st.rerun()
+
+        with col3:
+            if st.button(
+                "📋 My Appointments",
+                use_container_width=True
+            ):
+                st.session_state.page = "My Appointments"
+                st.rerun()
+
+        with col4:
+            if st.button(
+                "❌ Cancel",
+                use_container_width=True
+            ):
+                st.session_state.page = "Cancel My Appointment"
+                st.rerun()
+
+        with col5:
+            if st.button(
+                "👨‍⚕️ Doctors",
+                use_container_width=True
+            ):
+                st.session_state.page = "Doctors"
+                st.rerun()
+
+        with col6:
+            if st.button(
+                "🚪 Logout",
+                use_container_width=True
+            ):
+                st.session_state.logged_in = False
+                st.session_state.username = ""
+                st.session_state.name = ""
+                st.session_state.role = ""
+                st.session_state.page = "Home"
+                st.rerun()
+
     else:
 
-        page = st.sidebar.radio(
-            "Menu",
-            [
-                "Dashboard",
-                "View All Appointments",
-                "Cancel Appointment",
-                "Doctors"
-            ]
-        )
+        col1, col2, col3, col4, col5 = st.columns(5)
 
-    # LOGOUT
-    if st.sidebar.button("Logout"):
+        with col1:
+            if st.button(
+                "🏠 Dashboard",
+                use_container_width=True
+            ):
+                st.session_state.page = "Dashboard"
+                st.rerun()
 
-        st.session_state.logged_in = False
-        st.session_state.username = ""
-        st.session_state.name = ""
-        st.session_state.role = ""
+        with col2:
+            if st.button(
+                "📋 All Appointments",
+                use_container_width=True
+            ):
+                st.session_state.page = "View All Appointments"
+                st.rerun()
 
-        st.rerun()
+        with col3:
+            if st.button(
+                "❌ Cancel Appointment",
+                use_container_width=True
+            ):
+                st.session_state.page = "Cancel Appointment"
+                st.rerun()
 
-    # =====================================================
+        with col4:
+            if st.button(
+                "👨‍⚕️ Doctors",
+                use_container_width=True
+            ):
+                st.session_state.page = "Doctors"
+                st.rerun()
+
+        with col5:
+            if st.button(
+                "🚪 Logout",
+                use_container_width=True
+            ):
+                st.session_state.logged_in = False
+                st.session_state.username = ""
+                st.session_state.name = ""
+                st.session_state.role = ""
+                st.session_state.page = "Home"
+                st.rerun()
+
+    st.divider()
+
+    # =========================
     # USER HOME
-    # =====================================================
+    # =========================
 
-    if page == "Home":
+    if (
+        st.session_state.role == "User"
+        and st.session_state.page == "Home"
+    ):
 
-        st.title(
-            "🏠 Welcome to Hospital Appointment System"
-        )
+        st.header("🏠 Home")
 
-        st.write(
-            "Manage your hospital appointments easily."
+        st.success(
+            "Welcome to Hospital Appointment Management System!"
         )
 
         col1, col2, col3 = st.columns(3)
 
         with col1:
-            st.info("📅 Book Appointment")
+            st.metric(
+                "Doctors Available",
+                len(doctors)
+            )
 
         with col2:
-            st.info("👨‍⚕️ View Doctors")
+            appointments = get_user_appointments(
+                st.session_state.username
+            )
+
+            st.metric(
+                "My Appointments",
+                len(appointments)
+            )
 
         with col3:
-            st.info("📋 Manage Appointments")
+            st.metric(
+                "System Status",
+                "Active"
+            )
 
-    # =====================================================
-    # BOOK APPOINTMENT
-    # =====================================================
-
-    elif page == "Book Appointment":
-
-        st.title("📅 Book Appointment")
-
-        patient_name = st.text_input(
-            "Patient Name",
-            value=st.session_state.name
+        st.info(
+            "Use the buttons above to book, view or cancel appointments."
         )
 
-        doctor_names = [
-            doctor["name"]
-            for doctor in doctors
-        ]
+    # =========================
+    # BOOK APPOINTMENT
+    # =========================
 
-        selected_doctor = st.selectbox(
+    elif (
+        st.session_state.role == "User"
+        and st.session_state.page == "Book Appointment"
+    ):
+
+        st.header("📅 Book Appointment")
+
+        patient = st.text_input(
+            "Patient Name"
+        )
+
+        doctor = st.selectbox(
             "Select Doctor",
             doctor_names
         )
 
-        appointment_date = st.date_input(
+        date = st.date_input(
             "Appointment Date"
         )
 
@@ -487,10 +574,14 @@ else:
             "Reason for Appointment"
         )
 
-        if st.button("Book Appointment"):
+        if st.button(
+            "Book Appointment",
+            type="primary"
+        ):
 
-            if not patient_name:
-                st.error(
+            if not patient:
+
+                st.warning(
                     "Please enter patient name."
                 )
 
@@ -498,9 +589,9 @@ else:
 
                 add_appointment(
                     st.session_state.username,
-                    patient_name,
-                    selected_doctor,
-                    str(appointment_date),
+                    patient,
+                    doctor,
+                    str(date),
                     reason
                 )
 
@@ -508,13 +599,16 @@ else:
                     "Appointment booked successfully! ✅"
                 )
 
-    # =====================================================
+    # =========================
     # MY APPOINTMENTS
-    # =====================================================
+    # =========================
 
-    elif page == "My Appointments":
+    elif (
+        st.session_state.role == "User"
+        and st.session_state.page == "My Appointments"
+    ):
 
-        st.title("📋 My Appointments")
+        st.header("📋 My Appointments")
 
         appointments = get_user_appointments(
             st.session_state.username
@@ -522,46 +616,45 @@ else:
 
         if appointments:
 
-            for index, appointment in enumerate(
-                appointments,
-                start=1
-            ):
+            for appointment in appointments:
 
-                (
-                    appointment_id,
-                    username,
-                    patient,
-                    doctor,
-                    date,
-                    reason,
-                    status
-                ) = appointment
+                appointment_id = appointment[0]
+                patient = appointment[1]
+                doctor = appointment[2]
+                date = appointment[3]
+                reason = appointment[4]
+                status = appointment[5]
 
-                st.write(
-                    f"### Appointment {index}"
-                )
+                with st.container(border=True):
 
-                st.write(
-                    f"**Patient:** {patient}"
-                )
+                    st.write(
+                        f"### Appointment #{appointment_id}"
+                    )
 
-                st.write(
-                    f"**Doctor:** {doctor}"
-                )
+                    st.write(
+                        f"**Patient:** {patient}"
+                    )
 
-                st.write(
-                    f"**Date:** {date}"
-                )
+                    st.write(
+                        f"**Doctor:** {doctor}"
+                    )
 
-                st.write(
-                    f"**Reason:** {reason}"
-                )
+                    st.write(
+                        f"**Date:** {date}"
+                    )
 
-                st.write(
-                    f"**Status:** {status}"
-                )
+                    st.write(
+                        f"**Reason:** {reason}"
+                    )
 
-                st.divider()
+                    if status == "Booked":
+                        st.success(
+                            f"Status: {status}"
+                        )
+                    else:
+                        st.error(
+                            f"Status: {status}"
+                        )
 
         else:
 
@@ -569,13 +662,16 @@ else:
                 "No appointments found."
             )
 
-    # =====================================================
+    # =========================
     # USER CANCEL
-    # =====================================================
+    # =========================
 
-    elif page == "Cancel My Appointment":
+    elif (
+        st.session_state.role == "User"
+        and st.session_state.page == "Cancel My Appointment"
+    ):
 
-        st.title("❌ Cancel My Appointment")
+        st.header("❌ Cancel My Appointment")
 
         appointments = get_user_appointments(
             st.session_state.username
@@ -584,42 +680,33 @@ else:
         active_appointments = [
             appointment
             for appointment in appointments
-            if appointment[6] != "Cancelled"
+            if appointment[5] == "Booked"
         ]
 
         if active_appointments:
 
-            options = []
-
-            for appointment in active_appointments:
-
-                options.append(
-                    f"{appointment[2]} - "
-                    f"{appointment[3]} - "
-                    f"{appointment[4]}"
-                )
+            options = {
+                f"#{a[0]} - {a[1]} - {a[2]} - {a[3]}":
+                a[0]
+                for a in active_appointments
+            }
 
             selected = st.selectbox(
                 "Select Appointment",
-                options
+                list(options.keys())
             )
 
-            selected_index = options.index(
-                selected
-            )
-
-            selected_appointment = (
-                active_appointments[selected_index]
-            )
-
-            if st.button("Cancel Appointment"):
+            if st.button(
+                "Cancel Appointment",
+                type="primary"
+            ):
 
                 cancel_appointment(
-                    selected_appointment[0]
+                    options[selected]
                 )
 
                 st.success(
-                    "Appointment cancelled successfully."
+                    "Appointment cancelled successfully! ✅"
                 )
 
                 st.rerun()
@@ -627,57 +714,56 @@ else:
         else:
 
             st.info(
-                "No active appointments found."
+                "No active appointments available for cancellation."
             )
 
-    # =====================================================
+    # =========================
     # DOCTORS
-    # =====================================================
+    # =========================
 
-    elif page == "Doctors":
+    elif st.session_state.page == "Doctors":
 
-        st.title("👨‍⚕️ Available Doctors")
+        st.header("👨‍⚕️ Our Doctors")
 
         for doctor in doctors:
 
-            st.subheader(
-                doctor["name"]
-            )
+            with st.container(border=True):
 
-            st.write(
-                f"**Specialization:** "
-                f"{doctor['specialization']}"
-            )
+                st.subheader(
+                    doctor["name"]
+                )
 
-            st.write(
-                f"**Timing:** "
-                f"{doctor['timing']}"
-            )
+                st.write(
+                    f"**Specialization:** {doctor['specialization']}"
+                )
 
-            st.divider()
+                st.write(
+                    f"**Available Time:** {doctor['time']}"
+                )
 
-    # =====================================================
+    # =========================
     # ADMIN DASHBOARD
-    # =====================================================
+    # =========================
 
-    elif page == "Dashboard":
+    elif (
+        st.session_state.role == "Admin"
+        and st.session_state.page == "Dashboard"
+    ):
 
-        st.title("📊 Admin Dashboard")
+        st.header("📊 Admin Dashboard")
 
         appointments = get_all_appointments()
 
         total = len(appointments)
 
         booked = len([
-            appointment
-            for appointment in appointments
-            if appointment[6] == "Booked"
+            a for a in appointments
+            if a[6] == "Booked"
         ])
 
         cancelled = len([
-            appointment
-            for appointment in appointments
-            if appointment[6] == "Cancelled"
+            a for a in appointments
+            if a[6] == "Cancelled"
         ])
 
         col1, col2, col3 = st.columns(3)
@@ -700,92 +786,20 @@ else:
                 cancelled
             )
 
-        st.divider()
-
-        st.subheader(
-            "📋 Appointment Details"
+        st.success(
+            "Admin Dashboard is working successfully."
         )
 
-        if appointments:
-
-            for appointment in appointments:
-
-                (
-                    appointment_id,
-                    username,
-                    patient,
-                    doctor,
-                    date,
-                    reason,
-                    status
-                ) = appointment
-
-                st.write(
-                    f"### Appointment ID: {appointment_id}"
-                )
-
-                st.write(
-                    f"**Patient:** {patient}"
-                )
-
-                st.write(
-                    f"**Username:** {username}"
-                )
-
-                st.write(
-                    f"**Doctor:** {doctor}"
-                )
-
-                st.write(
-                    f"**Date:** {date}"
-                )
-
-                st.write(
-                    f"**Reason:** {reason}"
-                )
-
-                st.write(
-                    f"**Status:** {status}"
-                )
-
-                if status != "Cancelled":
-
-                    if st.button(
-                        "❌ Cancel This Appointment",
-                        key=f"dashboard_{appointment_id}"
-                    ):
-
-                        cancel_appointment(
-                            appointment_id
-                        )
-
-                        st.success(
-                            "Appointment cancelled successfully."
-                        )
-
-                        st.rerun()
-
-                else:
-
-                    st.info(
-                        "This appointment is already cancelled."
-                    )
-
-                st.divider()
-
-        else:
-
-            st.info(
-                "No appointments available."
-            )
-
-    # =====================================================
+    # =========================
     # ADMIN VIEW ALL
-    # =====================================================
+    # =========================
 
-    elif page == "View All Appointments":
+    elif (
+        st.session_state.role == "Admin"
+        and st.session_state.page == "View All Appointments"
+    ):
 
-        st.title("📋 All Appointments")
+        st.header("📋 All Appointments")
 
         appointments = get_all_appointments()
 
@@ -793,103 +807,98 @@ else:
 
             for appointment in appointments:
 
-                (
-                    appointment_id,
-                    username,
-                    patient,
-                    doctor,
-                    date,
-                    reason,
-                    status
-                ) = appointment
+                appointment_id = appointment[0]
+                username = appointment[1]
+                patient = appointment[2]
+                doctor = appointment[3]
+                date = appointment[4]
+                reason = appointment[5]
+                status = appointment[6]
 
-                st.write(
-                    f"### Appointment ID: {appointment_id}"
-                )
+                with st.container(border=True):
 
-                st.write(
-                    f"**Patient:** {patient}"
-                )
+                    st.write(
+                        f"### Appointment #{appointment_id}"
+                    )
 
-                st.write(
-                    f"**Username:** {username}"
-                )
+                    st.write(
+                        f"**Username:** {username}"
+                    )
 
-                st.write(
-                    f"**Doctor:** {doctor}"
-                )
+                    st.write(
+                        f"**Patient:** {patient}"
+                    )
 
-                st.write(
-                    f"**Date:** {date}"
-                )
+                    st.write(
+                        f"**Doctor:** {doctor}"
+                    )
 
-                st.write(
-                    f"**Reason:** {reason}"
-                )
+                    st.write(
+                        f"**Date:** {date}"
+                    )
 
-                st.write(
-                    f"**Status:** {status}"
-                )
+                    st.write(
+                        f"**Reason:** {reason}"
+                    )
 
-                st.divider()
+                    if status == "Booked":
+                        st.success(
+                            f"Status: {status}"
+                        )
+                    else:
+                        st.error(
+                            f"Status: {status}"
+                        )
 
         else:
 
             st.info(
-                "No appointments available."
+                "No appointments found."
             )
 
-    # =====================================================
+    # =========================
     # ADMIN CANCEL
-    # =====================================================
+    # =========================
 
-    elif page == "Cancel Appointment":
+    elif (
+        st.session_state.role == "Admin"
+        and st.session_state.page == "Cancel Appointment"
+    ):
 
-        st.title("❌ Cancel Appointment")
+        st.header("❌ Cancel Appointment")
 
         appointments = get_all_appointments()
 
         active_appointments = [
             appointment
             for appointment in appointments
-            if appointment[6] != "Cancelled"
+            if appointment[6] == "Booked"
         ]
 
         if active_appointments:
 
-            options = []
-
-            for appointment in active_appointments:
-
-                options.append(
-                    f"{appointment[2]} - "
-                    f"{appointment[3]} - "
-                    f"{appointment[4]}"
-                )
+            options = {
+                f"#{a[0]} - {a[2]} - {a[3]} - {a[4]}":
+                a[0]
+                for a in active_appointments
+            }
 
             selected = st.selectbox(
                 "Select Appointment",
-                options
-            )
-
-            selected_index = options.index(
-                selected
-            )
-
-            selected_appointment = (
-                active_appointments[selected_index]
+                list(options.keys())
             )
 
             if st.button(
-                "Cancel Selected Appointment"
+                "Cancel Appointment",
+                type="primary"
             ):
 
                 cancel_appointment(
-                    selected_appointment[0]
+                    options[selected]
                 )
 
                 st.success(
-                    "Appointment cancelled successfully."
+                    "Appointment cancelled successfully! ✅"
                 )
 
                 st.rerun()
@@ -897,14 +906,15 @@ else:
         else:
 
             st.info(
-                "No active appointments found."
+                "No active appointments available for cancellation."
             )
 
-# =========================================================
-# FOOTER
-# =========================================================
 
-st.markdown("---")
+# =========================
+# FOOTER
+# =========================
+
+st.divider()
 
 st.caption(
     "Hospital Appointment Management System | "
